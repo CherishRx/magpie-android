@@ -42,10 +42,9 @@ public class SettingsActivity extends Activity {
 
     private EditText port;
     private Switch lan;
-    private EditText feed;
     private Switch monet;
-    private Switch stableChannel;
     private LinearLayout seedBar;
+    private RadioGroup unitsGroup;
     private Switch shellAutoCheck;
     private TextView shellMirrorValue;
     private RadioGroup webReleaseGroup;
@@ -75,7 +74,6 @@ public class SettingsActivity extends Activity {
 
         port = findViewById(R.id.port);
         lan = findViewById(R.id.lan);
-        feed = findViewById(R.id.feed);
         webReleaseGroup = findViewById(R.id.web_release_group);
         webReleaseNever = findViewById(R.id.web_release_never);
         webRelease10 = findViewById(R.id.web_release_10);
@@ -95,12 +93,24 @@ public class SettingsActivity extends Activity {
         lan.setChecked(Prefs.lan(this));
         lan.setOnCheckedChangeListener((button, checked) -> Prefs.setLan(SettingsActivity.this, checked));
 
-        feed.setText(Prefs.updateFeed(this));
-        stableChannel = findViewById(R.id.stable_channel);
-        stableChannel.setChecked(Prefs.stableChannel(this));
 
         monet = findViewById(R.id.monet);
         seedBar = findViewById(R.id.colors_seed);
+
+        // 数字单位：英文 K/M/B ↔ 中文 万/亿，选了立刻生效
+        unitsGroup = findViewById(R.id.units_group);
+        RadioButton uEn = findViewById(R.id.units_en);
+        RadioButton uZh = findViewById(R.id.units_zh);
+        if (Prefs.unitMode(this) == 1) {
+            uZh.setChecked(true);
+        } else {
+            uEn.setChecked(true);
+        }
+        unitsGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            int mode = checkedId == R.id.units_zh ? 1 : 0;
+            Prefs.setUnitMode(SettingsActivity.this, mode);
+            NativeData.setUnitMode(mode);
+        });
         boolean canMonet = Build.VERSION.SDK_INT >= 31;
         monet.setChecked(Prefs.monet(this) && canMonet);
         monet.setEnabled(canMonet);
@@ -115,36 +125,33 @@ public class SettingsActivity extends Activity {
             recreate();
         });
 
-        // 保存后**不再拉起网关**：设置落盘 → 停掉前台服务 → 关闭自身 App。
-        // 下次手动打开 App 时才用新设置启动，端口 / 局域网 / 更新源 / 稳定渠道
-        // 一并生效，也不会出现「反复恢复网关（上次退出码 1）」的循环。
+        // 保存并重启 App。
+        //
+        // 旧版是「停网关 + 杀进程」，等用户自己再点开 App —— 但现在主界面是
+        // 原生页，杀掉之后不会自己回来，用户看到的就像「保存没生效」。
+        // 改成：落盘 → 停网关 → 杀掉进程 → 立刻重新拉起 NativeHome，
+        // 端口 / 局域网 / 更新源 / 稳定渠道 / 释放时间全部按新值重建。
         Button save = findViewById(R.id.save);
         save.setOnClickListener(v -> {
             if (!saveWebReleasePicker()) {
                 return;
             }
             Prefs.setPort(SettingsActivity.this, port.getText().toString());
-            Prefs.setUpdateFeed(SettingsActivity.this, feed.getText().toString());
-            Prefs.setStableChannel(SettingsActivity.this, stableChannel.isChecked());
             GatewayService.stop(SettingsActivity.this);
-            exitApp();
+            restartApp();
         });
 
-        // 「立即重启网关」同样改成：停网关 + 关闭自身 App，不自动拉起。
+        // 「立即重启网关」：不停 App，只重启网关进程，改动立刻生效
         Button restart = findViewById(R.id.restart);
         restart.setOnClickListener(v -> {
-            GatewayService.stop(SettingsActivity.this);
-            exitApp();
+            if (!saveWebReleasePicker()) {
+                return;
+            }
+            Prefs.setPort(SettingsActivity.this, port.getText().toString());
+            GatewayService.restart(SettingsActivity.this);
+            setResult(RESULT_OK);
+            finish();
         });
-
-        // magpie 本体是那个 ELF，不是这个 APK：更新在这里，更新完网关重启就位
-        Button checkUpdate = findViewById(R.id.check_update);
-        checkUpdate.setOnClickListener(v ->
-                startActivity(new Intent(SettingsActivity.this, UpdateActivity.class)));
-
-        // 壳自己的更新：查 GitHub Release，只提示 + 跳页，不碰 APK 安装
-        Button checkShell = findViewById(R.id.check_shell);
-        checkShell.setOnClickListener(v -> checkShellUpdate());
 
         // App 自更新：自动检查开关 + 下载镜像选择 + 蓝奏云入口
         shellAutoCheck = findViewById(R.id.shell_auto_check);
@@ -302,7 +309,7 @@ public class SettingsActivity extends Activity {
         ((TextView) findViewById(R.id.settings_title)).setTextColor(c[M3.ON_SURFACE]);
 
         int[] cards = {R.id.card_port, R.id.card_lan, R.id.card_background,
-                R.id.card_background_guide, R.id.card_feed, R.id.card_appearance,
+                R.id.card_background_guide, R.id.card_units, R.id.card_appearance,
                 R.id.card_seed, R.id.card_shell_update};
         for (int id : cards) {
             View card = findViewById(id);
@@ -313,13 +320,13 @@ public class SettingsActivity extends Activity {
         }
 
         int[] labels = {R.id.label_port, R.id.label_web_memory, R.id.label_background_guide,
-                R.id.label_feed, R.id.label_seed, R.id.label_shell_update,
+                R.id.label_units, R.id.label_seed, R.id.label_shell_update,
                 R.id.label_shell_mirror};
         for (int id : labels) {
             ((TextView) findViewById(id)).setTextColor(c[M3.ON_SURFACE]);
         }
         int[] hints = {R.id.hint_port, R.id.hint_lan, R.id.hint_web_memory,
-                R.id.hint_background_guide, R.id.hint_stable_channel,
+                R.id.hint_background_guide, R.id.hint_units,
                 R.id.monet_hint, R.id.hint_seed, R.id.hint_shell_auto_check,
                 R.id.hint_shell_mirror, R.id.hint_shell_lanzou};
         for (int id : hints) {
@@ -327,12 +334,9 @@ public class SettingsActivity extends Activity {
         }
 
         field(port);
-        field(feed);
         field(webReleaseCustomMinutes);
         tintSwitch(lan);
         tintSwitch(monet);
-        tintSwitch(stableChannel);
-        ((Switch) stableChannel).setTextColor(c[M3.ON_SURFACE]);
         tintRadio(webReleaseNever);
         tintRadio(webRelease10);
         tintRadio(webRelease15);
@@ -351,16 +355,6 @@ public class SettingsActivity extends Activity {
         shellMirrorValue.setBackground(mvBg);
         shellMirrorValue.setTextColor(c[M3.ON_SURFACE]);
 
-        // check update：outlined tonal —— surface 底 + outline 边 + primary 字
-        Button check = findViewById(R.id.check_update);
-        GradientDrawable outlined = new GradientDrawable();
-        outlined.setColor(c[M3.SURFACE]);
-        outlined.setCornerRadius(dp(20));
-        outlined.setStroke(dp(1), c[M3.OUTLINE]);
-        check.setBackground(outlined);
-        check.setTextColor(c[M3.PRIMARY]);
-        check.setAllCaps(false);
-        outlined(findViewById(R.id.check_shell));
         outlined(findViewById(R.id.open_notification_settings));
         outlined(findViewById(R.id.open_battery_settings));
         outlined(findViewById(R.id.open_background_guide));
@@ -562,9 +556,24 @@ public class SettingsActivity extends Activity {
     }
 
     /** 关闭自身 App：结束 Activity 再杀掉进程，前台服务、通知、恢复循环一起停。 */
-    private void exitApp() {
+    /**
+     * 重启整个 App：拉起 NativeHome（带 CLEAR_TASK），然后杀掉自己。
+     *
+     * <p>先 startActivity 再杀进程，新进程会自己起网关服务，设置立刻生效。
+     */
+    private void restartApp() {
+        try {
+            Intent i = new Intent(this, NativeHome.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(i);
+        } catch (Exception e) {
+            // 起不来就退回旧行为：关掉自己，让用户手动点
+            android.util.Log.w("MagpieSettings", "重启 App 失败: " + e);
+        }
         setResult(RESULT_OK);
         finishAndRemoveTask();
-        android.os.Process.killProcess(android.os.Process.myPid());
+        // 给新 Activity 一点时间先起来，再杀旧进程
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+                () -> android.os.Process.killProcess(android.os.Process.myPid()), 400);
     }
 }

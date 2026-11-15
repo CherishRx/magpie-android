@@ -1,136 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Material 3 骨架：顶栏（surface container）、圆角内容区（surface container lowest）、
-     网关未就绪时的整页状态。颜色全部在 MainActivity.applyTheme() 里按 M3 令牌刷，
-     XML 只定结构和尺寸。 -->
+<!-- magpie 网页界面：一整个 WebView，不加任何壳自己的顶栏 / 底栏 / 菜单。
+     全部壳侧操作都在原生主界面（NativeHome）的 ⋮ 里做，这里只负责把
+     magpie 自己的页面原样显出来。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <LinearLayout
-        android:id="@+id/shell"
+    <FrameLayout
+        android:id="@+id/web_card"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:layout_height="match_parent">
 
-        <!-- M3 top app bar：56dp 高，圆角大卡片，图标按钮 48dp -->
-        <LinearLayout
-            android:id="@+id/header"
+        <WebView
+            android:id="@+id/web"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginEnd="12dp"
-            android:gravity="center_vertical"
-            android:minHeight="60dp"
-            android:orientation="horizontal"
-            android:paddingStart="8dp"
-            android:paddingTop="6dp"
-            android:paddingEnd="6dp"
-            android:paddingBottom="3dp">
-
-            <ImageView
-                android:id="@+id/avatar"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:contentDescription="@string/app_name"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_magpie_bird" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/header_title"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:letterSpacing="0"
-                    android:text="@string/app_name"
-                    android:textSize="18sp"
-                    android:textStyle="bold" />
-
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="1dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <View
-                        android:id="@+id/state_dot"
-                        android:layout_width="8dp"
-                        android:layout_height="8dp"
-                        android:background="@drawable/dot_off" />
-
-                    <TextView
-                        android:id="@+id/state_text"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="6dp"
-                        android:text="@string/header_starting"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <!-- 本机网关地址：点一下复制 http://127.0.0.1:3425/v1 -->
-            <TextView
-                android:id="@+id/gw_pill"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:text="@string/header_gateway_placeholder"
-                android:textSize="12sp" />
-
-            <!-- 小入口：不占 IP 地址宽度，点击才展示局域网地址和密钥 -->
-            <TextView
-                android:id="@+id/lan_pill"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginStart="4dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="@string/lan_pill_off"
-                android:textSize="12sp" />
-
-            <TextView
-                android:id="@+id/menu"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/sheet_title"
-                android:gravity="center"
-                android:text="&#8942;"
-                android:textSize="20sp" />
-        </LinearLayout>
-
-        <!-- 内容区：与顶栏拼成同一张卡，只留底部圆角（圆角由 applyTheme 只做底角） -->
-        <FrameLayout
-            android:id="@+id/web_card"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_marginStart="12dp"
-            android:layout_marginTop="0dp"
-            android:layout_marginEnd="12dp"
-            android:layout_marginBottom="10dp"
-            android:layout_weight="1">
-
-            <WebView
-                android:id="@+id/web"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
-        </FrameLayout>
-    </LinearLayout>
+            android:layout_height="match_parent" />
+    </FrameLayout>
 
     <!-- 网关还没起来、或者挂了的时候顶上来。 -->
     <ScrollView

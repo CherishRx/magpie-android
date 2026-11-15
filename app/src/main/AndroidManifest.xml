@@ -28,8 +28,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Magpie">
 
+        <!-- 主界面：原生绘制，直连 magpie 的 HTTP 接口，不再是 WebView。
+             入口仍然是 Launcher。 -->
         <activity
-            android:name=".MainActivity"
+            android:name=".NativeHome"
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
@@ -39,6 +41,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 旧的 WebView 壳整个留着，从原生界面的 ⋮ 菜单进：插件安装、
+             隐私脱敏、同步备份这些深度功能，网页才做得全。 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:label="@string/web_ui_title"
+            android:parentActivityName=".NativeHome"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".SettingsActivity"

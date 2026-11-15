@@ -163,3 +163,319 @@ LANG=en_US.UTF-8 ./gradlew :app:assembleDebug    # 需要 JDK 17 + SDK 34 + grad
 > 仓库里没放 `gradle-wrapper.jar`（二进制），第一次跑要 `gradle wrapper` 生成，或直接用路 A。
 
 ---
+
+# 另一条路：Magisk / KernelSU 模块（不装 APK 也能跑）
+
+把 [magpie](https://github.com/yetone/magpie) 打包成 Magisk / KernelSU / APatch 模块，
+开机自启本地 AI 网关（`magpie serve`，默认监听 `0.0.0.0:3425`，局域网可访问），供手机上的 AI 客户端
+（Claude Code、Codex、OpenCode 等）统一调用。
+
+模块设计参考了设备上成熟的 Magisk/KernelSU 模块做法（进程管理、WebUI 跳转等）。
+
+## 二进制说明
+
+`bin/magpie` 是 **`magpie-cli-linux-arm64`**（v0.1.1504）：
+
+```
+ELF 64-bit LSB executable, ARM aarch64, statically linked, Go BuildID
+```
+
+**静态链接**，不依赖 glibc / GTK / WebKitGTK，可直接在 Android（bionic）上运行。
+实测在 Android 16 / arm64-v8a 上正常启动并监听 3425 端口。
+
+> ⚠️ 不要用 `magpie-linux-arm64`：那是桌面 GUI 版，动态链接 glibc + GTK3 + WebKitGTK，
+> Android 上没有 `/lib/ld-linux-aarch64.so.1`，会直接段错误。
+> 也可以用官方的 `magpie-cli-android-arm64`，效果等价。
+
+## 模块结构
+
+```
+magpie-android/
+├── module.prop                          # 模块信息
+├── META-INF/com/google/android/         # Magisk 安装入口（官方模板，勿改）
+├── customize.sh                         # 安装：建目录、拷二进制、写默认配置
+├── service.sh                           # 开机启动（等 boot_completed 后拉起）
+├── action.sh                            # [执行] 按钮：启动服务并打开 WebUI
+├── uninstall.sh                         # 卸载：停服务、清理数据
+├── webroot/index.html                   # KernelSU / APatch 的 WebUI 面板
+├── scripts/
+│   ├── magpie.config                    # 配置（路径 + 监听地址）
+│   ├── magpie.service                   # start|stop|restart|status
+│   └── status.sh                        # 更新管理器里显示的模块状态
+└── bin/magpie                           # 二进制（安装时拷到 /data/adb/magpie/bin）
+```
+
+## 运行时目录
+
+安装后数据在 **`/data/adb/magpie/`**（`/data/adb` 为 root 专属区域，App 无法访问）：
+
+| 路径 | 用途 |
+| --- | --- |
+| `bin/magpie` | 可执行文件 |
+| `scripts/magpie.config` | 配置（0600，root 专属） |
+| `run/magpie.pid`、`run/magpie.log` | 进程 PID 与日志 |
+| `data/` | magpie 自身数据（`MAGPIE_HOME`） |
+
+## Android 网络适配（重要）
+
+`magpie-cli-linux-arm64` 是**静态链接的 Go 程序**，在 Android 上有两个坑，本模块自动处理：
+
+### 1. DNS 解析失败 → DNS_LOCAL_HOSTNAMES 指向公网 DNS
+
+Android 没有 `/etc/resolv.conf`（用 netd 代理），静态 Go 会退回 `::1:53`，那个端口没人监听，
+于是所有外部请求都报：
+
+```
+lookup models.dev on [::1]:53: read udp ...: connection refused
+```
+
+**解决**：启动时设置 Go 官方的 `DNS_LOCAL_HOSTNAMES` 环境变量，值为 `MAGPIE_DNS`
+（默认 `223.5.5.5 119.29.29.29 8.8.8.8`），让 magpie 直接查询这些公网 DNS。
+
+> ### ⚠️ 为什么不用本地 dnsmasq（v0.4 变更，重要）
+>
+> v0.2 及以前用「自带 dnsmasq 监听 `::1:53`」来解决上面的 DNS 问题。**这是错的**，
+> 它会导致**打开热点后立刻关闭**：
+>
+> - 系统热点(tethering)由 netd 拉起 `/system/bin/dnsmasq`，其监听 socket 地址族是
+>   `ANY`（即同时绑 `0.0.0.0:53` 和 `[::]:53`）。
+> - 模块的 dnsmasq 抢先占了 `[::]:53`，系统 dnsmasq 于是起不来：
+>   ```
+>   E dnsmasq : failed to create listening socket: Address already in use
+>   E netd    : Failed to send update command to dnsmasq (Broken pipe)
+>   E Tethering: ERROR setting DNS forwarders failed ... Remote I/O error (code 121)
+>   ```
+> - `ap0` 进入 `error=5`，系统随即 `Canceling WiFi tethering request`，热点被取消。
+>
+> 也试过把模块 dnsmasq 改绑 `0.0.0.0:53`，**打开热点时一样冲突**（系统 dnsmasq 建
+> `0.0.0.0:53` 时撞上）。
+>
+> **正确做法**：不监听任何本地端口，让 magpie 直接查公网 DNS。Go 的
+> `hostLookupOrder` 对「无点的短主机名」走 hosts 文件 + NSS、**不会发 DNS 查询**，
+> 因此局域网里 tethering 用短名注册的机器（如 `xxx-PC`）照样能解析，不受影响。
+> 副作用只有一个：像 `localhost` 这类本该指向本机/局域网的**带特殊含义的短名**，
+> 现在会按公网 DNS 解析（对 magpie 这种纯出站网关无影响）。
+>
+> 升级到 v0.4 后，`magpie.service` 的 `cleanup_legacy_dnsmasq` **每次 start 都会先跑**
+> （在「已在运行就早退」之前），认人只认 `/proc/<pid>/cmdline`：
+> 旧版是 `--listen-address=::1`，系统热点那个是 `--listen-mark 0xf0063 --user dns_tether`。
+> 命中先 TERM、等 2 秒、再 KILL，并确认进程真的退出。
+> **绝不按名字 `pkill dnsmasq`** —— 系统热点那个也叫 dnsmasq，杀了热点直接废。
+
+### 2. HTTPS 证书校验失败 → 合并系统 CA
+
+静态 Go 找不到 Android 的证书库，报：
+
+```
+tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+**解决**：启动时把 `/system/etc/security/cacerts/*.0`（约 143 个）合并成
+`/data/adb/magpie/data/certs/ca-bundle.crt`，通过 `SSL_CERT_FILE` 交给 magpie。
+
+> 修复后日志里**不再有任何 DNS / TLS 报错**，`models.json`（5.9 MB）和 `partners.json`
+> 都能正常抓取。
+
+### 3. 插件装不上 → 换成 Android 版 Bun
+
+magpie 的插件跑在 **Bun** 上，而它自己下载的是 `bun-linux-aarch64`：
+
+```
+ELF executable, dynamic (/lib/ld-linux-aarch64.so.1)   ← glibc，Android 没有
+```
+
+于是执行就报 `No such file or directory`，所有 `bun add` 都以失败告终。
+
+**解决**：模块自带官方 NDK 编译的 **`bun-linux-aarch64-android`**（`bin-bun/magpie-bun`，
+链接 `/system/bin/linker64`），安装时放进 Bun 缓存目录，并在启动时通过 `MAGPIE_BUN`
+让 magpie 直接用它。
+
+> 实测：`bun 1.4.2` 在设备上正常运行，`magpie plugin add` 可以成功安装插件。
+
+### 4. 局域网地址被 fake-ip 骗到 → 排除 198.18.0.0/15
+
+magpie 自己探测「局域网地址」时，会把代理软件 TUN 的 fake-ip 段当成局域网，日志里打出：
+
+```
+on the network http://198.18.0.0:3430/?k=…
+```
+
+`198.18.0.0/15` 是 mihomo / Clash 这类 TUN 模式用的保留网段，**其它设备根本连不上**，
+真实可用地址是 `wlan0` 上的那个（如 `192.168.1.11`）。
+
+**解决**：模块自己算局域网 IP（`scripts/magpie.service` 的 `lan_ip()` 与 `scripts/status.sh`
+里同一套规则），只认真实网卡（`wlan0` → `wlan1` → `ccmni*` → 任意网卡），并排除
+`127.*` / `169.254.*` / `198.18.*` / `198.19.*`。
+
+- 启动日志会多打一行 `局域网 http://192.168.1.11:3430`，同时写入 `run/lan.url`
+- 控制台面板的「局域网地址」走同一套规则（`status.json` 的 `lanIp` / `lanApiUrl` / `lanWebUrl`）
+- 本机访问仍然用 `127.0.0.1`，不受影响
+
+## 关键设计
+
+- **root 运行**：数据目录在 `/data/adb` 下，服务以 root 启动。
+- **PID 校验**：从 pidfile 读 PID 后 `kill -0` 验证，进程不在了就清掉 pidfile。
+- **优雅停止**：先 `SIGTERM`，2 秒未退出再 `SIGKILL`。
+- **开机启动**：`service.sh` 等 `sys.boot_completed` 后拉起。**不需要等用户解锁** —— magpie
+  只使用 `/data/adb`，该目录在 `boot_completed` 时早已就绪；等 `/sdcard` 反而可能在
+  某些 ROM 上无限循环卡住启动。
+- **不覆盖用户配置**：升级时 `magpie.config` 已存在就保留。
+
+## 日志自动清理
+
+magpie 的日志会一直增长，所以 `service.sh` 和 `magpie.service` 都会在**启动前**检查：
+
+```
+超过 5 MB  →  mv magpie.log magpie.log.1  →  建新的空文件
+```
+
+- 只保留**一份**归档 `.1`，不会无限堆积
+- 只处理 `magpie.log`（不再有 dnsmasq.log）
+- **必须在进程启动前做**：magpie 一旦打开日志 fd，`mv` 后新写入仍会进旧文件，清理就等于白做
+- 触发时机：开机启动、以及每次 `magpie.service start/restart`
+
+阈值在 `service.sh` / `magpie.service` 里的 `LOG_MAX_BYTES=5242880`（5 MB），要改就同时改两处。
+
+## 版本号说明
+
+| 位置 | 值 | 含义 |
+| --- | --- | --- |
+| `module.prop` 的 `version` | `v0.4` | 模块版本，固定不跟随 magpie |
+| `module.prop` 的 `versionCode` | `1004` | 整数，模块升级时递增即可 |
+| WebUI 面板「版本」 | `0.1.1517` | **magpie 二进制真实版本** |
+
+magpie **自带自动更新**，会自己从 GitHub 拉新版本替换二进制（实测从 0.1.1504 自动升到
+0.1.1517）。所以 WebUI 面板的版本一栏直接读 `magpie --version`，跟着上游走，
+不需要模块这边做任何检测。
+
+## 模块状态显示（管理器里的一行字）
+
+`scripts/status.sh` 会把状态写进模块描述，在管理器模块卡片上直接看到：
+
+```
+magpie 运行中 | WebUI: http://127.0.0.1:3430/?k=<key>
+magpie 已停止 | 点 [执行] 打开 WebUI
+```
+
+- **KernelSU / APatch**：通过 `ksud module config set override.description` 动态覆盖，状态实时变化
+- **Magisk**：不支持该机制，显示 `module.prop` 里的静态文字（同样可读）
+- 更新时机：安装时、开机启动后、每次启停后
+
+## 两个端口（重要）
+
+| 端口 | 用途 | 说明 |
+| --- | --- | --- |
+| **3425** | API 网关 | OpenAI / Anthropic / Gemini 协议，给 AI 客户端用 |
+| **3430** | 网页界面 WebUI | 浏览器打开的管理页面 |
+
+> ⚠️ **`magpie serve` 默认只提供 API，没有网页。**
+> 必须加 `--web` 才会在同一进程里起网页（本模块已自动加上）。
+> 不加时访问 3425 只会返回一段 JSON（API 索引），不是界面。
+
+> ⚠️ **WebUI 需要带密钥访问**：`http://127.0.0.1:3430/?k=<key>`
+> 直接开 `http://127.0.0.1:3430` 会返回 **401**。
+> 密钥保存在 `/data/adb/magpie/data/web.key`（固定不变，重启不会变），
+> 带密钥的完整地址写在 `/data/adb/magpie/run/web.url`。
+
+## 执行按钮与 WebUI
+
+**管理器内 [执行] 按钮**（`action.sh`）：
+
+点一下直接完成三件事，不需要按任何键：
+
+1. 服务没在跑 → 自动启动
+2. 用浏览器打开带密钥的 WebUI 地址（从 `run/web.url` 读取）
+3. 同步模块状态描述
+
+启动失败会打印日志路径，不会静默失败。
+
+**KernelSU / APatch 的 WebUI**（`webroot/index.html`）：
+
+管理器检测到 `webroot/` 后会在模块卡片上显示 **WebUI** 按钮，点开是状态面板。
+面板数据来自同目录的 `status.json`（由 `scripts/status.sh` 生成），纯静态、无外部依赖。
+界面分两页，底部导航切换：
+
+| 页面 | 内容 |
+| --- | --- |
+| 首页 | 状态条 + 「API 接入」卡片 + 「控制台」卡片 |
+| 日志 | 最近 30 行运行日志（`lastlog.txt`） |
+
+**API 接入** 卡片：
+
+| 字段 | 示例 | 复制 |
+| --- | --- | --- |
+| 接口地址（OpenAI 兼容） | `http://127.0.0.1:3425/v1` | ✓ |
+| API Key | `sk-magpie-key-…` | ✓ |
+| 局域网地址（其它设备用） | `http://192.168.1.9:3425/v1` | ✓ |
+
+API Key 用 `magpie gateway-key add <名字>` 创建，存在
+`data/.config/magpie/caller-keys.json` 的 `secret` 字段。
+**没有 key 时面板显示「未创建」并隐藏复制按钮**，不会再显示一个假的 `magpie`。
+回环地址（127.0.0.1）不校验 key，只有开放局域网后才必须带 key（否则 401）。
+
+**控制台** 卡片：
+
+| 字段 | 示例 | 复制 |
+| --- | --- | --- |
+| 访问地址 | `http://127.0.0.1:3430` | ✓ |
+| 访问密码 | `fa6b0812…`（默认隐藏，点「显示」） | ✓ |
+| 一键打开（免输密码） | `http://127.0.0.1:3430/?k=…` | 按钮 |
+
+其它行为：
+
+- 每个地址下方都有 **复制** 按钮（优先用 Clipboard API，失败退回 `execCommand`）
+- 访问密码默认打码显示，防止截图泄露
+- 长地址 / 长 Key 自动换行，不会横向溢出
+- 每 5 秒自动刷新状态
+
+> `webroot/` 的权限与 SELinux context 由 KernelSU 自动设置，`customize.sh` 不会去改动它的 context。
+> Magisk 不支持 `webroot`，因此 Magisk 下只有 [执行] 按钮可用。
+
+## 打包
+
+zip 根目录必须是上面这些文件：
+
+```sh
+cd Magisk模块
+(cd magpie-android && zip -r ../build/magpie-android.zip .)
+```
+
+然后在 Magisk / KernelSU / APatch 管理器里「从本地安装」选该 zip。
+
+## 使用
+
+1. 装好后重启，或用管理器 [执行] 菜单启动。
+2. 在手机终端配置 provider：`magpie provider add deepseek sk-…`
+3. 把手机上的 AI 客户端指向 `http://127.0.0.1:3425/v1`。
+4. 手动控制：`su -c "sh /data/adb/modules/magpie/scripts/magpie.service {start|stop|restart|status}"`
+
+### 终端里直接用 `magpie` 命令
+
+Android 的终端环境有两个坑，直接用原始二进制会出问题：
+
+- `HOME=/`（根目录只读），magpie 会把配置往 `/.config` 里写，报
+  `mkdir /.config: read-only file system`
+- `/data/adb/magpie/bin` 不在 `PATH` 里，敲 `magpie` 找不到命令
+
+**解决**：模块提供了一个包装脚本 `scripts/magpie-cli.sh`，安装时链接到
+`/data/adb/ksu/bin/magpie`（该目录本来就在 PATH 中）。它会自动设置：
+
+| 变量 | 值 | 作用 |
+| --- | --- | --- |
+| `HOME` | `/data/adb/magpie/data` | 让 magpie 找到自己的配置 |
+| `SSL_CERT_FILE` | 合并后的系统 CA | 修复 HTTPS 证书校验 |
+| `MAGPIE_BUN` | Android 版 Bun | 让插件能安装 |
+
+所以在新终端里（root shell）直接敲就行：
+
+```sh
+magpie --version
+magpie providers
+magpie plugin list
+magpie plugin add @magpie-community/opencode-joycode-auth
+magpie plugin login joycode
+```
+
+> 注意：需要 root shell（`su`）。普通 app 终端没有权限读 `/data/adb`。
+
+> `service.sh` 与 `magpie.service` 使用 `magpie serve`；具体参数以 `magpie serve --help` 为准。

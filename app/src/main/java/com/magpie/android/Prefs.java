@@ -30,6 +30,8 @@ public final class Prefs {
     public static final String STABLE_CHANNEL = "stable_channel";
     /** 后台多久后释放 WebView（分钟）；0 = 从不。 */
     public static final String WEB_RELEASE_MINUTES = "web_release_minutes";
+    /** 「释放时间已按新版默认值覆盖过」的标记，只迁移一次。 */
+    public static final String WEB_RELEASE_MIGRATED = "web_release_migrated_v2";
     /** 后台运行检查卡被用户主动关闭过，别每次进设置都强提醒。 */
     public static final String BACKGROUND_GUIDE_DISMISSED = "background_guide_dismissed";
     /** 首次后台保活引导是否已经完成或被用户选择不再提示。 */
@@ -50,6 +52,9 @@ public final class Prefs {
     public static final String SHELL_MIRROR = "shell_mirror";
     /** 壳更新：用户手动添加的镜像前缀列表。 */
     public static final String SHELL_CUSTOM_MIRRORS = "shell_custom_mirrors";
+    /** 数字单位：0=英文 K/M/B，1=中文 万/亿。 */
+    public static final String UNIT_MODE = "unit_mode";
+
     /** 壳导入的本地插件文件夹名清单（下次导入时清已移除的残留）。 */
     public static final String IMPORTED_PLUGINS = "imported_plugins";
 
@@ -104,13 +109,41 @@ public final class Prefs {
 
     /** 0=从不；其余值为后台释放 WebView 的分钟数。默认 10 分钟。 */
     public static int webReleaseMinutes(Context ctx) {
-        int m = sp(ctx).getInt(WEB_RELEASE_MINUTES, 10);
+        int m = sp(ctx).getInt(WEB_RELEASE_MINUTES, 5);
         return m >= 1 && m <= 1440 ? m : 0;
+    }
+
+    /**
+     * 把释放时间强制改成本版的默认值，**只做一次**。
+     *
+     * <p>为什么需要：上一版起 WebView 从主界面降级成「打开控制后台」，
+     * 释放时间的语义变了；老用户存着的 10/15/30 分钟是旧界面时代的设置，
+     * 继续沿用会让新版看起来没生效（比如存了 1 分钟，网页界面刚退就被销毁）。
+     *
+     * <p>用独立的迁移标记，所以**不会**每次启动都覆盖用户后来手动改的值。
+     */
+    public static void migrateWebReleaseOnce(Context ctx, int minutes) {
+        if (sp(ctx).getBoolean(WEB_RELEASE_MIGRATED, false)) {
+            return;
+        }
+        sp(ctx).edit()
+                .putBoolean(WEB_RELEASE_MIGRATED, true)
+                .putInt(WEB_RELEASE_MINUTES, minutes)
+                .apply();
     }
 
     public static void setWebReleaseMinutes(Context ctx, int minutes) {
         int m = minutes >= 1 && minutes <= 1440 ? minutes : 0;
         sp(ctx).edit().putInt(WEB_RELEASE_MINUTES, m).apply();
+    }
+
+    /** 数字单位：0=英文（K/M/B），1=中文（万/亿）。 */
+    public static int unitMode(Context ctx) {
+        return sp(ctx).getInt(UNIT_MODE, 0) == 1 ? 1 : 0;
+    }
+
+    public static void setUnitMode(Context ctx, int mode) {
+        sp(ctx).edit().putInt(UNIT_MODE, mode == 1 ? 1 : 0).apply();
     }
 
     public static boolean backgroundGuideDismissed(Context ctx) {

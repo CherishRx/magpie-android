@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Magpie</string>
 
-    <string name="menu_settings">设置</string>
+    <string name="web_ui_title">网页界面</string>
     <string name="status_starting">正在启动网关…</string>
     <string name="status_not_answering">网关没有响应</string>
     <string name="status_not_running">网关没有在运行</string>
@@ -11,7 +11,6 @@
     <string name="status_retry">重试</string>
 
     <string name="settings_title">设置</string>
-    <string name="settings_summary">网关端口、局域网访问与更新源</string>
     <string name="settings_gateway_port">网关端口</string>
     <string name="settings_gateway_port_hint">3425 是 magpie 的默认值</string>
     <string name="settings_lan">允许局域网访问</string>
@@ -20,38 +19,15 @@
     <string name="settings_update_feed_hint">留空则使用 magpie 官方源</string>
     <string name="settings_save">保存并重启</string>
     <string name="settings_restart_now">立即重启网关</string>
-    <string name="settings_check_update">检查 magpie 更新</string>
+    <string name="settings_save_feed">保存更新设置</string>
+    <string name="settings_feed_saved">已保存，下次检查时生效</string>
 
-    <string name="menu_check_update">检查更新</string>
     <string name="header_starting">启动中…</string>
     <string name="header_running">运行中</string>
     <string name="header_stopped">已停止</string>
-    <string name="header_gateway_placeholder">127.0.0.1:3425</string>
-    <string name="header_copied">已复制 %s</string>
 
-    <string name="sheet_title">菜单</string>
-    <string name="sheet_subtitle">网关 %1$s · 网页界面 %2$s</string>
 
-    <string name="act_reload">重新加载界面</string>
-    <string name="act_reload_sub">网关的页面重新读一遍，不重启网关本身</string>
-    <string name="act_browser">用浏览器打开</string>
-    <string name="act_browser_sub">交给系统浏览器，方便用电脑上的工具查看</string>
-    <string name="act_copy">复制网关地址</string>
-    <string name="act_copy_sub">把 %s 复制到剪贴板</string>
-    <string name="act_restart">重启网关</string>
-    <string name="act_restart_sub">先停掉再启动，改过密钥或配置后用得上</string>
-    <string name="act_stop">停止网关</string>
-    <string name="act_stop_sub">agent 连不上，直到再启动为止</string>
-    <string name="act_log">查看日志</string>
-    <string name="act_log_sub">网关最后写下的三百行输出</string>
     <string name="act_settings">设置</string>
-    <string name="act_settings_sub">端口、局域网访问、外观与开机启动</string>
-    <string name="act_battery">忽略电池优化</string>
-    <string name="act_battery_sub">让系统不要在熄屏后冻结网关</string>
-    <string name="act_update">检查 magpie 更新</string>
-    <string name="act_update_sub">拉 GitHub 上的新版二进制，不用重装 APK</string>
-    <string name="act_about">关于</string>
-    <string name="act_about_sub">官方仓库、移植作者与许可证</string>
 
     <string name="about_app">Magpie for Android</string>
     <string name="about_upstream">magpie 官方项目</string>
@@ -63,26 +39,16 @@
     <string name="about_unofficial">非官方移植，与 yetone 无关；出问题先看菜单里的日志</string>
     <string name="about_ai">由 AI 辅助完成</string>
     <string name="about_notice">查看 magpie MIT 许可证全文</string>
-    <string name="about_ver">外壳 %1$s · 内核 %2$s</string>
-    <string name="act_done">已交给系统</string>
 
-    <string name="settings_appearance">外观</string>
+    <string name="settings_units">数字单位</string>
+    <string name="settings_units_hint">用量、请求数这类大数字用哪种缩写</string>
+    <string name="settings_units_en">英文（K / M / B）</string>
+    <string name="settings_units_zh">中文（万 / 亿）</string>
     <string name="settings_monet">莫奈取色</string>
     <string name="settings_monet_hint">从系统壁纸里取一种强调色（需要 Android 12 及以上）</string>
     <string name="settings_monet_unavailable">这个系统版本不支持动态取色</string>
     <string name="settings_seed">主题色</string>
     <string name="settings_seed_hint">Material 3 · TonalSpot · SPEC 2025：从八种种子色生成整套配色</string>
-    <string name="settings_bg">自定义背景颜色</string>
-    <string name="settings_header_bg">顶栏卡片颜色</string>
-    <string name="settings_page_bg">内容区背景颜色</string>
-    <string name="settings_bg_hint">只改 App 外壳（顶栏、菜单、设置页）；页面本身的深色/浅色跟随 magpie 自己的主题</string>
-    <string name="settings_bg_default">跟随系统</string>
-    <string name="menu_desktop_layout">桌面宽屏排版</string>
-    <string name="menu_narrow_layout">手机窄屏排版</string>
-    <string name="menu_desktop_sub">切换 magpie 页面的宽窄排版，切完自动刷新页面</string>
-    <string name="menu_browser">用浏览器打开</string>
-    <string name="toast_desktop">已切到桌面宽屏排版（设置 tab 全铺开）</string>
-    <string name="toast_narrow">已切回手机排版</string>
 
     <string name="update_title">更新</string>
     <string name="update_current">当前版本</string>
@@ -102,11 +68,7 @@
     <string name="update_confirm_rollback">把 magpie 换回上一个版本？</string>
     <string name="update_working">正在更新，别切走太久…</string>
     <string name="act_marvis_paste">粘贴 Marvis 授权回调</string>
-    <string name="act_marvis_paste_sub">浏览器里登录完，把地址栏整条 URL 贴进来</string>
-    <string name="act_import_plugin">导入本地插件</string>
-    <string name="act_import_plugin_sub">从手机存储选一个插件文件夹，拷进沙箱并交给 magpie 加载</string>
     <string name="plugin_importing">正在导入插件…</string>
-    <string name="plugin_import_ok">插件 %1$s 已导入并加载</string>
     <string name="plugin_import_failed">导入失败：%1$s</string>
     <string name="plugin_confirm_title">导入本地插件</string>
     <string name="plugin_confirm_msg">要导入文件夹「%1$s」吗？导入后会拷进 App 沙箱并交给 magpie 加载。</string>
@@ -116,33 +78,16 @@
     <string name="plugin_none_selected">请先勾选要导入的插件</string>
     <string name="plugin_import_ok_count">已导入 %1$d 个插件</string>
     <string name="plugin_import_partial">成功 %1$d 个：\n%2$s</string>
-    <string name="marvis_paste_title">粘贴 Marvis 授权回调</string>
     <string name="marvis_paste_help">先在浏览器里完成 QQ 授权，页面跳转后复制地址栏里整条以 https://yybadaccess.3g.qq.com/marvis_client_login/marvis_oauth 开头的 URL（必须带 code=）</string>
     <string name="marvis_paste_hint">https://yybadaccess.3g.qq.com/marvis_client_login/marvis_oauth?login_type=QC&amp;code=…</string>
     <string name="marvis_paste_ok">提交</string>
-    <string name="marvis_paste_bad">这不像回调地址：要以 http 开头、并且含 code=</string>
     <string name="marvis_paste_done">已交给 magpie，正在换登录态（最多等 10 分钟）</string>
     <string name="marvis_paste_failed">写不进去：magpie 的 HOME 目录不可用</string>
-    <string name="settings_check_shell">检查 App 更新（GitHub）</string>
     <string name="shell_update_title">App 更新</string>
     <string name="shell_update_available">发现新版本 %1$s，点「去下载」打开 GitHub Release 页手动下载安装。</string>
     <string name="shell_update_latest">已是最新版（%1$s）</string>
     <string name="shell_update_failed">检查失败：%1$s</string>
     <string name="shell_update_go">去下载</string>
-    <string name="lan_pill_off">局域网</string>
-    <string name="lan_pill_on">局域网</string>
-    <string name="lan_title">局域网共享</string>
-    <string name="lan_off_hint">先在壳的设置里开启「允许局域网访问」，再到 Magpie 网页 → 网关 → 局域网共享，选「开启」。完成后回到这里查看地址和密钥。</string>
-    <string name="lan_on_hint">把下面的地址和密钥填进另一台设备的「添加供应商」里：Base URL 用地址，API Key 用密钥。</string>
-    <string name="lan_addr_label">局域网地址</string>
-    <string name="lan_addr_missing">没找到局域网地址（Wi-Fi 没连，或地址被 VPN 接管）</string>
-    <string name="lan_key_label">局域网密钥</string>
-    <string name="lan_key_missing">还没有局域网密钥。到 Magpie 网页 → 网关 → 局域网共享，点一次「开启」，magpie 会生成一个默认密钥；或者自己加一个网关密钥。</string>
-    <string name="lan_copy_addr">复制地址</string>
-    <string name="lan_copy_key">复制密钥</string>
-    <string name="lan_turn_on">我知道了</string>
-    <string name="lan_copied">已复制</string>
-    <string name="lan_opening">请按提示在壳设置和 Magpie 网页里开启共享</string>
     <string name="lan_security">地址和密钥只在同一 Wi-Fi 内有效；别把它们发给不在这个网络里的人。</string>
     <string name="web_restarted">页面进程被系统回收，已重新加载</string>
     <string name="web_render_crashed">页面渲染进程崩溃，已重新加载</string>
@@ -159,9 +104,6 @@
     <string name="settings_background_guide_hint">开启通知和取消电池优化能让你看到网关异常重启提示，并减少系统限制后台网关的概率。系统仍可能在内存紧张时回收页面。</string>
     <string name="settings_open_notifications">打开通知设置</string>
     <string name="settings_open_battery">打开电池优化设置</string>
-    <string name="web_memory_released">后台已释放管理页面内存，正在重新加载</string>
-    <string name="gateway_restart_alert_title">Magpie 网关反复重启</string>
-    <string name="gateway_restart_alert_body">网关在短时间内多次异常退出，已暂停自动恢复。点此查看日志并重试。</string>
     <string name="background_guide_title">让网关在后台更稳定</string>
     <string name="background_guide_intro">Magpie 网关会通过前台服务继续运行。下面两项可减少系统在熄屏或内存紧张时限制它的概率；不会保证永不被系统回收。</string>
     <string name="background_guide_notifications">通知权限</string>
@@ -179,8 +121,6 @@
     <string name="settings_stable_channel_hint">开启：只推送发布满三天后的稳定版；关闭：每个版本都推送（含紧急修复）。只影响 magpie 内核的检查更新，自定义更新源不受影响。</string>
 
     <!-- 壳（APK）自更新：方案一 App 内下载 + 系统安装器，镜像选择，蓝奏云入口 -->
-    <string name="act_shell_update">检查 App 更新</string>
-    <string name="act_shell_update_sub">下载新版 APK 并用系统安装器安装，不跳浏览器</string>
     <string name="shell_update_available_download">发现新版本 %1$s（下载源：%2$s），点「下载并安装」在 App 内直接更新。</string>
     <string name="shell_download_install">下载并安装</string>
     <string name="shell_open_page">打开发布页</string>
