@@ -103,8 +103,18 @@ final class NativePageAccounts extends NativePage {
                 for (int j = 0; j < keys.length(); j++) {
                     JSONObject k = NativeData.at(keys, j);
                     if (k != null) {
-                        state.put(id + "|key|" + NativeData.str(k, "masked", ""),
-                                NativeData.flag(k, "on"));
+                        // key 型卡片的 user 可能是 key 的 name（用户自己起的名，
+                        // 如「国模」「福利」），也可能是 masked key。两个都当键存，
+                        // 否则按 name 来的卡片会查不到开关状态（误显示「停用」）。
+                        boolean on = NativeData.flag(k, "on");
+                        String masked = NativeData.str(k, "masked", "");
+                        String keyName = NativeData.str(k, "name", "");
+                        if (!masked.isEmpty()) {
+                            state.put(id + "|key|" + masked, on);
+                        }
+                        if (!keyName.isEmpty() && !keyName.equals(masked)) {
+                            state.put(id + "|key|" + keyName, on);
+                        }
                     }
                 }
             }
@@ -545,6 +555,40 @@ final class NativePageAccounts extends NativePage {
         }
 
         JSONArray windows = NativeData.arr(q, "windows");
+
+        // 额度区的小标题：先说清下面每行那两个数字是什么。
+        // 用户要的是「余额 / 总额度」，所以把余额和总量先摆一行，
+        // 下面的窗口行再写「剩余 / 总额度」。
+        String balance = NativeData.str(q, "balance", "");
+        double totalLimit = 0;
+        String totalUnit = "";
+        for (int i = 0; i < windows.length(); i++) {
+            JSONObject w = NativeData.at(windows, i);
+            if (w == null || NativeData.flag(w, "unlimited") || NativeData.flag(w, "text")) {
+                continue;
+            }
+            double lim = NativeData.dec(w, "limit");
+            if (lim > 0) {
+                totalLimit += lim;
+                if (totalUnit.isEmpty()) {
+                    totalUnit = Zh.of(NativeData.str(w, "unit", ""));
+                }
+            }
+        }
+        if (!balance.isEmpty() || totalLimit > 0) {
+            StringBuilder cap = new StringBuilder("余额 / 总额度　");
+            cap.append(balance.isEmpty() ? "—" : balance);
+            if (totalLimit > 0) {
+                cap.append(" / ").append(shortCount(totalLimit));
+                if (!totalUnit.isEmpty()) {
+                    cap.append(' ').append(totalUnit);
+                }
+            }
+            TextView t = ui.text(cap.toString(), 10.5f, M3.ON_SURFACE_VARIANT, false);
+            t.setLayoutParams(ui.matchWrap(6));
+            body.addView(t);
+        }
+
         for (int i = 0; i < windows.length(); i++) {
             JSONObject win = NativeData.at(windows, i);
             if (win == null) {
@@ -637,37 +681,24 @@ final class NativePageAccounts extends NativePage {
             // 先判断这是订阅账号还是 key
             boolean isLogin = false;
             String refFound = null;
+
+            // 第一轮：?last=1（秒回，但可能是 null —— 从没打开过网页的供应商页时）
             MagpieApi.Result pr = MagpieApi.providersLast(host);
             if (pr.ok()) {
-                JSONObject o = pr.json();
-                JSONArray arr = NativeData.arr(o, "providers");
-                for (int i = 0; i < arr.length(); i++) {
-                    JSONObject p = NativeData.at(arr, i);
-                    if (p == null || !provider.equals(NativeData.str(p, "id", ""))) {
-                        continue;
+                String[] hit = resolveRef(pr.json(), provider, user);
+                isLogin = "login".equals(hit[0]);
+                refFound = hit[1];
+            }
+            // 第二轮：还找不到就拉全量。否则「?last=1 返回 null」会让所有 key 型
+            // 供应商都启停不了（点了只弹「没在供应商列表里找到」）。
+            if (!isLogin && (refFound == null || refFound.isEmpty())) {
+                MagpieApi.Result full = MagpieApi.providersFull(host);
+                if (full.ok()) {
+                    String[] hit = resolveRef(full.json(), provider, user);
+                    if ("login".equals(hit[0])) {
+                        isLogin = true;
                     }
-                    JSONObject acct = NativeData.obj(p, "account");
-                    if (acct != null) {
-                        JSONArray logins = NativeData.arr(acct, "logins");
-                        for (int j = 0; j < logins.length(); j++) {
-                            JSONObject l = NativeData.at(logins, j);
-                            if (l != null && user.equals(NativeData.str(l, "user", ""))) {
-                                isLogin = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!isLogin) {
-                        JSONArray keys = NativeData.arr(p, "keyList");
-                        for (int j = 0; j < keys.length(); j++) {
-                            JSONObject k = NativeData.at(keys, j);
-                            if (k != null && user.equals(NativeData.str(k, "masked", ""))) {
-                                refFound = NativeData.str(k, "id", "");
-                                break;
-                            }
-                        }
-                    }
-                    break;
+                    refFound = hit[1];
                 }
             }
 
@@ -722,6 +753,76 @@ final class NativePageAccounts extends NativePage {
         return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    /**
+     * 在一份 {@code /api/providers} 响应里认出这张额度卡对应哪个账号。
+     *
+     * <p>返回 {@code [类型, ref]}：类型是 {@code login}（订阅账号，传 agent+user）
+     * 或 {@code key}（API key，传 id+ref），ref 是 key 的指纹 id；认不出来就是
+     * {@code ["", ""]}。
+     *
+     * <p>为什么不能只按 {@code masked} 匹配：key 型额度卡的 {@code user} 字段
+     * 在 magpie 里取的是 {@code KeyName}（用户自己起的名，如「国模」「福利」），
+     * 没有名字才是 {@code Mask(key)}。只认 masked 的话，带名字的 key 永远找不到，
+     * 表现就是点了「停用」弹「这个账号没在供应商列表里找到」。
+     */
+    private static String[] resolveRef(JSONObject o, String provider, String user) {
+        JSONArray arr = NativeData.arr(o, "providers");
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject p = NativeData.at(arr, i);
+            if (p == null || !provider.equals(NativeData.str(p, "id", ""))) {
+                continue;
+            }
+            // 1) 订阅账号：account.logins[].user
+            JSONObject acct = NativeData.obj(p, "account");
+            if (acct != null) {
+                JSONArray logins = NativeData.arr(acct, "logins");
+                for (int j = 0; j < logins.length(); j++) {
+                    JSONObject l = NativeData.at(logins, j);
+                    if (l != null && user.equals(NativeData.str(l, "user", ""))) {
+                        return new String[]{"login", ""};
+                    }
+                }
+            }
+            // 2) key：先按 name / masked 精确匹配
+            JSONArray keys = NativeData.arr(p, "keyList");
+            for (int j = 0; j < keys.length(); j++) {
+                JSONObject k = NativeData.at(keys, j);
+                if (k == null) {
+                    continue;
+                }
+                String masked = NativeData.str(k, "masked", "");
+                String kName = NativeData.str(k, "name", "");
+                if (user.equals(masked) || user.equals(kName)) {
+                    return new String[]{"key", NativeData.str(k, "id", "")};
+                }
+            }
+            // 3) 兜底：比末尾四位（掩码是「前4…后4」，名字可能被别名/seat 覆盖）
+            if (user.length() >= 4) {
+                String tail = user.substring(user.length() - 4);
+                for (int j = 0; j < keys.length(); j++) {
+                    JSONObject k = NativeData.at(keys, j);
+                    if (k == null) {
+                        continue;
+                    }
+                    String masked = NativeData.str(k, "masked", "");
+                    if (masked.length() >= 4 && masked.endsWith(tail)) {
+                        return new String[]{"key", NativeData.str(k, "id", "")};
+                    }
+                }
+            }
+            // 4) 只有一个 key 的供应商：卡片没名字时直接认它
+            if (keys.length() == 1) {
+                JSONObject k = NativeData.at(keys, 0);
+                String id = k == null ? "" : NativeData.str(k, "id", "");
+                if (!id.isEmpty()) {
+                    return new String[]{"key", id};
+                }
+            }
+            break;
+        }
+        return new String[]{"", ""};
+    }
+
     private void toast(String s) {
         android.widget.Toast.makeText(host, s, android.widget.Toast.LENGTH_SHORT).show();
     }
@@ -756,10 +857,10 @@ final class NativePageAccounts extends NativePage {
             right = display;
             color = ui.col(M3.ON_SURFACE);
         } else if (limit > 0) {
-            // 单位在窗口名里已经写过了（"积分" 配 "积分"）就别再挂一遍，
-            // 否则一行里两个「积分」看着像笔误
+            // 写「剩余 / 总额度」：用户要看的是还剩多少，不是已经花了多少。
+            // 单位在窗口名里已经写过了（"积分" 配 "积分"）就别再挂一遍。
             boolean showUnit = !unit.isEmpty() && !name.contains(unit);
-            right = shortCount(amount) + " / " + shortCount(limit)
+            right = shortCount(Math.max(0, limit - amount)) + " / " + shortCount(limit)
                     + (showUnit ? " " + unit : "");
             color = ui.quotaColor(remaining);
         } else {
@@ -773,8 +874,12 @@ final class NativePageAccounts extends NativePage {
         box.addView(head);
 
         if (!unlimited) {
-            double pct = textOnly && !display.isEmpty() ? Math.max(0, 100 - used) : remaining;
-            box.addView(ui.quotaBar(pct));
+            // 条走「已用」：字上写剩余，条上画已用（越满越危险），
+            // 颜色仍按剩余判定（快完了变红）。
+            double usedPct = limit > 0
+                    ? Math.max(0, Math.min(100, amount * 100.0 / limit))
+                    : Math.max(0, Math.min(100, used));
+            box.addView(ui.quotaBar(usedPct, remaining));
         }
 
         StringBuilder sub = new StringBuilder();

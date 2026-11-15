@@ -289,14 +289,26 @@ final class Ui {
      * 颜色从主色 → 三级色 → 错误色过渡，一眼能看出哪个账号快没了。
      */
     View quotaBar(double remaining) {
+        return quotaBar(remaining, remaining);
+    }
+
+    /**
+     * 一条细进度条，**进度和颜色分开**。
+     *
+     * <p>为什么需要两个参数：额度卡上写的是「剩余多少」，条却要画「已用多少」
+     * （越满越危险）。只传一个数只能二选一，所以这里把“画多满”和“什么颜色”
+     * 拆开：{@code fillPct} 是条的长度（0..100），{@code remainingPct} 只用来
+     * 选颜色（快用完了变红）。
+     */
+    View quotaBar(double fillPct, double remainingPct) {
         LinearLayout wrapBox = new LinearLayout(ctx);
         wrapBox.setOrientation(LinearLayout.VERTICAL);
         wrapBox.setLayoutParams(matchWrap(8));
 
         ProgressBar pb = new ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal);
         pb.setMax(1000);
-        pb.setProgress((int) Math.round(Math.max(0, Math.min(1, remaining / 100.0)) * 1000));
-        int tint = quotaColor(remaining);
+        pb.setProgress((int) Math.round(Math.max(0, Math.min(1, fillPct / 100.0)) * 1000));
+        int tint = quotaColor(remainingPct);
         pb.setProgressTintList(ColorStateList.valueOf(tint));
         pb.setProgressBackgroundTintList(ColorStateList.valueOf(c[M3.SURFACE_CONTAINER_HIGHEST]));
         pb.setLayoutParams(new LinearLayout.LayoutParams(

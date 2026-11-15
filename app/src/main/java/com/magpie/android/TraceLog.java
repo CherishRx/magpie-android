@@ -300,8 +300,10 @@ final class TraceLog {
                     list.addView(t);
                     return;
                 }
+                // History 返回 oldest first（magpie/internal/gateway/history.go）；
+                // 从末尾开始取，保证最新 50 条置顶，而非先显示最早的 50 条。
                 int n = Math.min(routes.length(), 50);
-                for (int i = 0; i < n; i++) {
+                for (int i = routes.length() - 1; i >= routes.length() - n; i--) {
                     JSONObject x = routes.optJSONObject(i);
                     if (x != null) {
                         list.addView(row(x));

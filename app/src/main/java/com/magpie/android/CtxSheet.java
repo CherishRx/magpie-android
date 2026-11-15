@@ -2,6 +2,9 @@ package com.magpie.android;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
@@ -285,7 +288,7 @@ final class CtxSheet {
             root.addView(bar);
 
             // ---- 方块占比图（网页那张：左两块 + 右侧大片「剩余空间」斜线）----
-            root.addView(treemap(act, ui, kinds, total, sumParts));
+            root.addView(treemap(act, ui, route, kinds, Math.max(total, tokens), tokens));
 
             // 图例：每 kind 一颗点 + 名字 + 数
             LinearLayout legend = new LinearLayout(act);
@@ -335,7 +338,12 @@ final class CtxSheet {
                         12.5f, M3.ON_SURFACE, true));
                 group2.addView(gh);
 
-                for (int i = 0; i < items.length(); i++) {
+                // prompt.go 对 chat 的轮次按编号升序给出（oldest first）；
+                // 列表需要最新一轮在最上面。其他类型按 token 多少排名，
+                // 没有时间语义，保持上游原顺序，避免把工具等误标成新旧。
+                boolean newestFirst = "chat".equals(kind);
+                for (int index = 0; index < items.length(); index++) {
+                    int i = newestFirst ? items.length() - 1 - index : index;
                     JSONObject it = items.optJSONObject(i);
                     if (it == null) {
                         continue;
@@ -367,82 +375,360 @@ final class CtxSheet {
     }
 
     /**
-     * 方块占比图：网页上那张「系统提示词 / 工具 / 会话内容 + 剩余空间斜线」。
-     *
-     * <p>做法：左边一列按从大到小叠各成分（至少占 34% 宽），右边把剩余空间
-     * 铺满并画斜线。小成分在里面按 token 比例分高度。
+     * 上下文地图：各类 token 分区，块内进一步按具体条目划分，剩余空间画斜纹。
+     * 与网页 context.js 的 tilesOf/squarify 一样，用面积表达占比；
+     * 点有内容的块打开原文，点剩余空间则无动作。
      */
-    private static View treemap(Activity act, Ui ui, List<JSONObject> kinds,
-                                long total, long sumParts) {
-        LinearLayout wrap = new LinearLayout(act);
-        wrap.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(150));
-        wlp.topMargin = ui.dp(8);
-        wrap.setLayoutParams(wlp);
+    private static View treemap(Activity act, Ui ui, JSONObject route,
+                                List<JSONObject> kinds, long window, long used) {
+        ContextMap map = new ContextMap(act, ui, route, kinds, window, used);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(172));
+        lp.topMargin = ui.dp(10);
+        map.setLayoutParams(lp);
+        return map;
+    }
 
-        // 左：成分堆叠（每个块直接挂在 wrap 上按权重分宽）
-        float usedShare = (float) sumParts / total;
-        float leftWeight = Math.max(0.34f, Math.min(0.7f, usedShare));
+    private static final class MapTile {
+        final String kind;
+        final JSONObject item;
+        final String title;
+        final long tokens;
+        final boolean free;
+        float x, y, w, h;
 
-        for (int i = 0; i < kinds.size(); i++) {
-            JSONObject p = kinds.get(i);
-            String kind = NativeData.str(p, "kind", "");
-            long n = NativeData.num(p, "tokens");
-            float share = sumParts > 0 ? (float) n / sumParts : 1f;
+        MapTile(String kind, JSONObject item, String title, long tokens, boolean free) {
+            this.kind = kind;
+            this.item = item;
+            this.title = title;
+            this.tokens = tokens;
+            this.free = free;
+        }
+    }
 
-            LinearLayout cell = new LinearLayout(act);
-            cell.setOrientation(LinearLayout.VERTICAL);
-            cell.setPadding(ui.dp(8), ui.dp(6), ui.dp(6), ui.dp(6));
-            int color = kindColorOf(ui, kind);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor((color & 0x00FFFFFF) | 0x33000000);   // 30% 透明
-            bg.setCornerRadius(ui.dp(8));
-            bg.setStroke(Math.max(1, ui.dp(1)), (color & 0x00FFFFFF) | 0x66000000);
-            cell.setBackground(bg);
+    /**
+     * 一个 View 的 Canvas 上画所有地图块，避免用数十个布局子项堆卡片。
+     * 先对 kind 做 squarify，再在每个 kind 的矩形内对 items 做第二层 squarify。
+     */
+    private static final class ContextMap extends View {
+        private static final int TILE_MIN = 1500;
+        private static final int TILE_MAX = 12;
+        private final Activity act;
+        private final Ui ui;
+        private final JSONObject route;
+        private final List<JSONObject> kinds;
+        private final long window;
+        private final long used;
+        private final List<MapTile> tiles = new ArrayList<>();
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+        private int layoutW, layoutH;
 
-            // 只给够高的块写字，太小的写不下
-            if (share > 0.12f) {
-                TextView nm = ui.text(kindNameOf(kind), 10.5f, M3.ON_SURFACE, true);
-                nm.setSingleLine(true);
-                nm.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                cell.addView(nm);
-                TextView tk = ui.mono(NativeData.tokens(n), 9.5f, M3.ON_SURFACE_VARIANT);
-                cell.addView(tk);
-            }
-
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, 0, Math.max(0.06f, share));
-            if (i > 0) {
-                clp.topMargin = ui.dp(3);
-            }
-            wrap.addView(cell, clp);
+        ContextMap(Activity act, Ui ui, JSONObject route, List<JSONObject> kinds,
+                   long window, long used) {
+            super(act);
+            this.act = act;
+            this.ui = ui;
+            this.route = route;
+            this.kinds = kinds;
+            this.window = window;
+            this.used = used;
+            setClickable(true);
+            setContentDescription("上下文地图，点不同颜色的块查看原文");
         }
 
-        // 右：剩余空间（斜线）
-        long rest = Math.max(0, total - sumParts);
-        if (rest > 0) {
-            LinearLayout right = new LinearLayout(act);
-            right.setOrientation(LinearLayout.VERTICAL);
-            right.setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(10));
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(0x11000000);
-            bg.setCornerRadius(ui.dp(8));
-            bg.setStroke(Math.max(1, ui.dp(1)), ui.col(M3.OUTLINE_VARIANT));
-            right.setBackground(bg);
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            int w = getWidth(), h = getHeight();
+            if (w <= 0 || h <= 0) {
+                return;
+            }
+            if (w != layoutW || h != layoutH) {
+                layoutW = w;
+                layoutH = h;
+                layoutTiles(w, h);
+            }
+            float gap = ui.dp(2);
+            for (MapTile t : tiles) {
+                float l = t.x + gap / 2, top = t.y + gap / 2;
+                float r = t.x + t.w - gap / 2, b = t.y + t.h - gap / 2;
+                if (r <= l || b <= top) {
+                    continue;
+                }
+                rect.set(l, top, r, b);
+                int color = t.free ? ui.col(M3.OUTLINE_VARIANT) : kindColorOf(ui, t.kind);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(t.free ? ui.col(M3.SURFACE_CONTAINER_HIGH)
+                        : mix(color, ui.col(M3.SURFACE_CONTAINER_HIGH), 0.18f));
+                canvas.drawRoundRect(rect, ui.dp(7), ui.dp(7), paint);
+                canvas.save();
+                android.graphics.Path clip = new android.graphics.Path();
+                clip.addRoundRect(rect, ui.dp(7), ui.dp(7), android.graphics.Path.Direction.CW);
+                canvas.clipPath(clip);
+                if (t.free) {
+                    paint.setStyle(Paint.Style.STROKE);
+                    paint.setStrokeWidth(ui.dp(1));
+                    paint.setColor(mix(ui.col(M3.ON_SURFACE_VARIANT),
+                            ui.col(M3.SURFACE_CONTAINER_HIGH), 0.12f));
+                    float d = ui.dp(7);
+                    for (float x = l - (b - top); x < r; x += d) {
+                        canvas.drawLine(x, b, x + (b - top), top, paint);
+                    }
+                }
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(1, ui.dp(1)));
+                paint.setColor(mix(color, ui.col(M3.SURFACE_CONTAINER_HIGH),
+                        t.free ? 0.22f : 0.38f));
+                canvas.drawRoundRect(rect, ui.dp(7), ui.dp(7), paint);
+                canvas.restore();
 
-            TextView nm = ui.text("剩余空间", 11, M3.ON_SURFACE_VARIANT, false);
-            right.addView(nm);
-            TextView tk = ui.mono(NativeData.tokens(rest) + " · "
-                    + NativeData.percent(rest * 100.0 / total), 10,
-                    M3.ON_SURFACE_VARIANT);
-            tk.setLayoutParams(mlp(ui, 2));
-            right.addView(tk);
-
-            wrap.addView(right, new LinearLayout.LayoutParams(0,
-                    ViewGroup.LayoutParams.MATCH_PARENT, Math.max(0.1f, 1f - leftWeight)));
+                if (t.w < ui.dp(66) || t.h < ui.dp(29)) {
+                    continue;
+                }
+                float inset = ui.dp(8);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setTypeface(android.graphics.Typeface.create(
+                        android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD));
+                paint.setTextSize(ui.dp(11));
+                paint.setColor(t.free ? ui.col(M3.ON_SURFACE_VARIANT)
+                        : mix(color, ui.col(M3.ON_SURFACE), 0.62f));
+                canvas.save();
+                canvas.clipRect(l + inset, top + ui.dp(4), r - inset, b - ui.dp(2));
+                String name = shorten(t.title, paint, r - l - inset * 2);
+                canvas.drawText(name, l + inset, top + ui.dp(16), paint);
+                if (t.h >= ui.dp(50)) {
+                    paint.setTypeface(android.graphics.Typeface.DEFAULT);
+                    paint.setTextSize(ui.dp(10));
+                    paint.setColor(ui.col(M3.ON_SURFACE_VARIANT));
+                    String value = NativeData.tokens(t.tokens);
+                    if (t.free && window > 0) {
+                        value += " · " + NativeData.percent(t.tokens * 100.0 / window);
+                    }
+                    canvas.drawText(shorten(value, paint, r - l - inset * 2),
+                            l + inset, top + ui.dp(33), paint);
+                }
+                canvas.restore();
+            }
         }
-        return wrap;
+
+        /** 先划分“已用/剩余”，再按上游类别及具体条目划分已用区。 */
+        private void layoutTiles(int w, int h) {
+            tiles.clear();
+            long scale = Math.max(window, Math.max(used, 1));
+            float longSide = Math.max(w, h);
+            float ratio = Math.min(1f, Math.max(0f, (float) used / scale));
+            float usedLen = used >= scale ? longSide
+                    : Math.min(longSide, Math.max(longSide * (float) Math.pow(ratio, 0.35), ui.dp(36)));
+            boolean across = w >= h;
+            float usedW = across ? usedLen : w, usedH = across ? h : usedLen;
+
+            List<MapTile> parts = new ArrayList<>();
+            for (JSONObject p : kinds) {
+                int n = NativeData.num(p, "tokens");
+                if (n > 0) {
+                    parts.add(new MapTile(NativeData.str(p, "kind", ""), null,
+                            kindNameOf(NativeData.str(p, "kind", "")), n, false));
+                }
+            }
+            squarify(parts, 0, 0, usedW, usedH);
+            for (MapTile p : parts) {
+                JSONObject part = null;
+                for (JSONObject k : kinds) {
+                    if (p.kind.equals(NativeData.str(k, "kind", ""))) {
+                        part = k;
+                        break;
+                    }
+                }
+                JSONArray arr = NativeData.arr(part, "items");
+                float area = p.w * p.h;
+                if (arr.length() == 0 || area < TILE_MIN * 2) {
+                    tiles.add(p);
+                    continue;
+                }
+                List<JSONObject> items = new ArrayList<>();
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject it = arr.optJSONObject(i);
+                    if (it != null && NativeData.num(it, "tokens") > 0) {
+                        items.add(it);
+                    }
+                }
+                items.sort((a, b) -> Integer.compare(NativeData.num(b, "tokens"),
+                        NativeData.num(a, "tokens")));
+                long sum = 0;
+                for (JSONObject it : items) {
+                    sum += NativeData.num(it, "tokens");
+                }
+                List<MapTile> inner = new ArrayList<>();
+                long rest = 0;
+                int kept = 0;
+                for (JSONObject it : items) {
+                    int n = NativeData.num(it, "tokens");
+                    if (kept < TILE_MAX && (double) n / Math.max(1, sum) * area >= TILE_MIN) {
+                        inner.add(new MapTile(p.kind, it,
+                                NativeData.str(it, "name", "?"), n, false));
+                        kept++;
+                    } else {
+                        rest += n;
+                    }
+                }
+                if (rest > 0) {
+                    inner.add(new MapTile(p.kind, null, "另外 " + (items.size() - kept) + " 项",
+                            rest, false));
+                }
+                if (inner.size() == 0) {
+                    tiles.add(p);
+                    continue;
+                }
+                squarify(inner, p.x, p.y, p.w, p.h);
+                boolean tooThin = false;
+                for (MapTile t : inner) {
+                    if (Math.min(t.w, t.h) < ui.dp(14)) {
+                        tooThin = true;
+                        break;
+                    }
+                }
+                if (tooThin) {
+                    // 防止一条窄到点不到的细线；保留分区，同时仍能点大块看整个类别。
+                    tiles.add(p);
+                } else {
+                    tiles.addAll(inner);
+                }
+            }
+            if (used < scale) {
+                MapTile free = new MapTile("", null, "剩余空间", scale - used, true);
+                free.x = across ? usedLen : 0;
+                free.y = across ? 0 : usedLen;
+                free.w = across ? w - usedLen : w;
+                free.h = across ? h : h - usedLen;
+                tiles.add(free);
+            }
+        }
+
+        /** 保持数组顺序的 squarified treemap，块面积近似正比于 token。 */
+        private void squarify(List<MapTile> vals, float x, float y, float w, float h) {
+            if (vals.isEmpty() || w <= 0 || h <= 0) {
+                return;
+            }
+            double sum = 0;
+            for (MapTile v : vals) {
+                sum += Math.max(0, v.tokens);
+            }
+            if (sum <= 0) {
+                return;
+            }
+            double k = (w * h) / sum;
+            List<MapTile> row = new ArrayList<>();
+            for (MapTile v : vals) {
+                float side = Math.min(w, h);
+                if (row.isEmpty() || worst(row, v, side, k) <= worst(row, null, side, k)) {
+                    row.add(v);
+                } else {
+                    float[] next = placeRow(row, x, y, w, h, k);
+                    x = next[0]; y = next[1]; w = next[2]; h = next[3];
+                    row.clear();
+                    row.add(v);
+                }
+            }
+            if (!row.isEmpty()) {
+                placeRow(row, x, y, w, h, k);
+            }
+        }
+
+        private double worst(List<MapTile> row, MapTile add, float side, double k) {
+            double sum = 0, hi = 0, lo = Double.MAX_VALUE;
+            for (MapTile v : row) {
+                double area = Math.max(1, v.tokens * k);
+                sum += area;
+                hi = Math.max(hi, area);
+                lo = Math.min(lo, area);
+            }
+            if (add != null) {
+                double area = Math.max(1, add.tokens * k);
+                sum += area;
+                hi = Math.max(hi, area);
+                lo = Math.min(lo, area);
+            }
+            if (sum <= 0 || side <= 0 || lo <= 0) {
+                return Double.MAX_VALUE;
+            }
+            return Math.max(side * side * hi / (sum * sum),
+                    (sum * sum) / (side * side * lo));
+        }
+
+        private float[] placeRow(List<MapTile> row, float x, float y,
+                                 float w, float h, double k) {
+            double area = 0;
+            for (MapTile v : row) {
+                area += v.tokens * k;
+            }
+            if (w >= h) {
+                float cw = Math.min(w, (float) (area / Math.max(1, h)));
+                float cy = y;
+                for (MapTile v : row) {
+                    float ch = (float) (v.tokens * k / Math.max(1, cw));
+                    v.x = x; v.y = cy; v.w = cw; v.h = ch;
+                    cy += ch;
+                }
+                return new float[]{x + cw, y, w - cw, h};
+            }
+            float rh = Math.min(h, (float) (area / Math.max(1, w)));
+            float cx = x;
+            for (MapTile v : row) {
+                float cw = (float) (v.tokens * k / Math.max(1, rh));
+                v.x = cx; v.y = y; v.w = cw; v.h = rh;
+                cx += cw;
+            }
+            return new float[]{x, y + rh, w, h - rh};
+        }
+
+        private static String shorten(String value, Paint p, float width) {
+            if (value == null || width <= 0) {
+                return "";
+            }
+            if (p.measureText(value) <= width) {
+                return value;
+            }
+            String dots = "…";
+            int end = value.length();
+            while (end > 0 && p.measureText(value.substring(0, end) + dots) > width) {
+                end--;
+            }
+            return end == 0 ? dots : value.substring(0, end) + dots;
+        }
+
+        private static int mix(int color, int background, float strength) {
+            float a = Math.max(0, Math.min(1, strength));
+            int r = Math.round(((color >> 16) & 255) * a + ((background >> 16) & 255) * (1 - a));
+            int g = Math.round(((color >> 8) & 255) * a + ((background >> 8) & 255) * (1 - a));
+            int b = Math.round((color & 255) * a + (background & 255) * (1 - a));
+            return 0xff000000 | (r << 16) | (g << 8) | b;
+        }
+
+        @Override
+        public boolean performClick() {
+            super.performClick();
+            return true;
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                float x = event.getX(), y = event.getY();
+                for (MapTile tile : tiles) {
+                    if (tile.free || x < tile.x || x > tile.x + tile.w
+                            || y < tile.y || y > tile.y + tile.h) {
+                        continue;
+                    }
+                    performClick();
+                    String name = tile.item == null ? "" : NativeData.str(tile.item, "name", "");
+                    PartSheet.show(act, ui, route, tile.kind, name,
+                            (int) Math.min(Integer.MAX_VALUE, tile.tokens));
+                    return true;
+                }
+            }
+            return true;
+        }
     }
 
     private static LinearLayout.LayoutParams mlp(Ui ui, int topDp) {

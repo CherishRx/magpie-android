@@ -142,6 +142,8 @@ public class NativeHome extends Activity {
         // 后台保活引导（通知权限 / 电池优化 / 厂商自启动）和两个自动检查
         // 跟旧壳一致，只是延后一点，别和首屏渲染抢主线程
         uiHandler.postDelayed(() -> BackgroundGuide.maybeShowOnLaunch(this), 2500);
+        // 小米系且没设「无限制」：发一条通知引导（不弹框、不挡用户看数据）
+        uiHandler.postDelayed(() -> FreezeGuard.nudgeOnOpen(this), 3200);
         uiHandler.postDelayed(this::autoCheckUpdates, 4000);
         uiHandler.postDelayed(() -> ShellUpdateFlow.autoCheck(this, ShellUpdateFlow.m3(this, ui)),
                 6000);
@@ -190,6 +192,9 @@ public class NativeHome extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        // 从后台回来：如果刚才后台待得够久（小米 greeze 约 40 秒就冻），
+        // 补一条「为什么刚才卡」的提醒；时间戳为 0 时什么都不做。
+        FreezeGuard.checkAfterReturn(this, Prefs.freezeLeftAt(this));
         // 前台才起这两条定时器：顶栏状态点每 2 秒、页面数据每 30 秒。
         // 放在 onResume 里成对启停，后台就一次唤醒都没有。
         uiHandler.removeCallbacks(ticker);
@@ -222,6 +227,13 @@ public class NativeHome extends Activity {
     @Override
     protected void onStop() {
         super.onStop();
+        // 记下退后台的时间。只在「真的离开 App」时记：
+        // 跳到本 App 里的设置页/网页页时 onStop 也会响，但进程仍在前台，
+        // 系统不会冻结，不该算成后台。此刻自己的 onActivityStopped 还没跑，
+        // 所以 startedActivities()==1 就是「只剩我这一扇窗口了」。
+        if (!isChangingConfigurations() && App.startedActivities() <= 1) {
+            FreezeGuard.markBackgrounded(this);
+        }
         // 后台把页面上的常驻任务全停掉（路由页的长轮询、额度重试），
         // 回到前台时 onResume 会把当前这个页重新挂上。
         for (NativePage p : pages) {
@@ -1022,19 +1034,78 @@ public class NativeHome extends Activity {
             ver = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Exception ignored) {
         }
-        String msg = "Magpie for Android " + ver + "\n\n"
-                + "核心：magpie（github.com/yetone/magpie，MIT）\n"
-                + "外壳：原生界面版，直连本机 magpie 的 HTTP 接口\n\n"
-                + "● 概览 / 用量 / 账号 / 路由 四页是原生绘制的\n"
-                + "● 插件安装、隐私脱敏、同步备份等深度功能在「打开完整网页」里\n"
-                + "● 数据全部来自本机 127.0.0.1，不出手机";
+
+        LinearLayout box = ui.column();
+        int pad = ui.dp(20);
+        box.setPadding(pad, ui.dp(4), pad, 0);
+
+        TextView verView = ui.mono("Magpie for Android " + ver, 12, M3.ON_SURFACE_VARIANT);
+        verView.setLayoutParams(ui.matchWrap(2));
+        box.addView(verView);
+
+        // ---- 核心：magpie 官方项目（可点）----
+        box.addView(linkRow("magpie 官方项目", "github.com/yetone/magpie",
+                "https://github.com/yetone/magpie"));
+
+        // ---- 外壳：这个壳自己的仓库（用户要的那条）----
+        box.addView(linkRow("本外壳源码", "github.com/yqing004-boop/magpie-android",
+                "https://github.com/yqing004-boop/magpie-android"));
+
+        // ---- 作者（酷安，可点）----
+        box.addView(linkRow("APK 移植制作者", "酷安 @图图没耳朵",
+                "https://www.coolapk.com/u/1642567"));
+
+        TextView lic = ui.text("magpie 核心：Copyright © 2026 yetone · MIT License",
+                11.5f, M3.ON_SURFACE_VARIANT, false);
+        lic.setLayoutParams(ui.matchWrap(14));
+        box.addView(lic);
+
+        TextView note = ui.text("非官方移植，与 yetone 无关。\n"
+                        + "四页界面由外壳直接调本机 magpie 的 HTTP 接口绘制；"
+                        + "插件安装、隐私脱敏、同步备份等深度功能在「⋮ → 打开控制后台」的网页里。\n"
+                        + "所有数据都来自本机 127.0.0.1，不出手机。",
+                11.5f, M3.ON_SURFACE_VARIANT, false);
+        note.setLayoutParams(ui.matchWrap(8));
+        note.setLineSpacing(ui.dp(2), 1f);
+        box.addView(note);
+
+        ScrollView sc = new ScrollView(this);
+        sc.addView(box);
+
         AlertDialog dlg = new AlertDialog.Builder(this)
                 .setTitle("关于")
-                .setMessage(msg)
+                .setView(sc)
                 .setPositiveButton("知道了", null)
                 .create();
         styleDialog(dlg);
         dlg.show();
+    }
+
+    /** 关于里的一行：左边标签，下面一行可点的地址。 */
+    private View linkRow(String label, String shown, final String url) {
+        LinearLayout row = ui.column();
+        row.setLayoutParams(ui.matchWrap(10));
+
+        TextView l = ui.text(label, 12, M3.ON_SURFACE_VARIANT, false);
+        row.addView(l);
+
+        TextView a = ui.text(shown, 13.5f, M3.PRIMARY, true);
+        a.setPadding(0, ui.dp(2), 0, 0);
+        a.setBackgroundResource(selectableItemBackground());
+        a.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            } catch (Exception e) {
+                // 没浏览器就退回复制，总不能点了没反应
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(ClipData.newPlainText("magpie", url));
+                }
+                toast("已复制 " + url);
+            }
+        });
+        row.addView(a);
+        return row;
     }
 
     // ------------------------------------------------------------------

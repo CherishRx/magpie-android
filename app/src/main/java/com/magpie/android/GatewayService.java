@@ -979,7 +979,7 @@ public class GatewayService extends Service {
     }
 
     private static Notification notification(Context ctx, String title, String body, int flags) {
-        Intent open = new Intent(ctx, MainActivity.class)
+        Intent open = new Intent(ctx, NativeHome.class)
                 .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(ctx, 1, open,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);

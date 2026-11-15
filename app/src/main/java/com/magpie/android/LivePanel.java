@@ -441,7 +441,8 @@ final class LivePanel {
         info.setLayoutParams(ui.matchWrap(4));
         card.addView(info);
 
-        card.addView(ui.quotaBar(100 - Math.max(0, Math.min(100, used))));
+        card.addView(ui.quotaBar(Math.max(0, Math.min(100, used)),
+                100 - Math.max(0, Math.min(100, used))));
 
         if (picked) {
             card.addView(stateLine(w, tries, done, status));

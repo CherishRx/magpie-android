@@ -55,6 +55,11 @@ public final class Prefs {
     /** 数字单位：0=英文 K/M/B，1=中文 万/亿。 */
     public static final String UNIT_MODE = "unit_mode";
 
+    /** 上次发「设为无限制」提醒的时间（毫秒），控制提醒频率。 */
+    public static final String FREEZE_NUDGE_AT = "freeze_nudge_at";
+    /** 退到后台的时间（毫秒）：用它判断这次后台是不是长到会被冻结。 */
+    public static final String FREEZE_LEFT_AT = "freeze_left_at";
+
     /** 壳导入的本地插件文件夹名清单（下次导入时清已移除的残留）。 */
     public static final String IMPORTED_PLUGINS = "imported_plugins";
 
@@ -140,6 +145,26 @@ public final class Prefs {
     /** 数字单位：0=英文（K/M/B），1=中文（万/亿）。 */
     public static int unitMode(Context ctx) {
         return sp(ctx).getInt(UNIT_MODE, 0) == 1 ? 1 : 0;
+    }
+
+    // ------------------------------------------------------------------
+    // 后台冻结提醒（FreezeGuard）
+    // ------------------------------------------------------------------
+
+    public static long freezeNudgeAt(Context ctx) {
+        return sp(ctx).getLong(FREEZE_NUDGE_AT, 0);
+    }
+
+    public static void setFreezeNudgeAt(Context ctx, long at) {
+        sp(ctx).edit().putLong(FREEZE_NUDGE_AT, at).apply();
+    }
+
+    public static long freezeLeftAt(Context ctx) {
+        return sp(ctx).getLong(FREEZE_LEFT_AT, 0);
+    }
+
+    public static void setFreezeLeftAt(Context ctx, long at) {
+        sp(ctx).edit().putLong(FREEZE_LEFT_AT, at).apply();
     }
 
     public static void setUnitMode(Context ctx, int mode) {

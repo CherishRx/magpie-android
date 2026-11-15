@@ -610,12 +610,11 @@ final class NativePageOverview extends NativePage {
         total.setLayoutParams(ui.matchWrap(3));
         titleBox.addView(total);
 
-        // 合计后面挂一个最紧窗口的进度条，颜色一眼看出危险程度
+        // 合计后面挂一条进度条：条走已用，颜色按最紧的剩余判定
         double tight = QuotaAgg.tightest(list);
         card.addView(head);
         if (tight >= 0 && list.size() > 0) {
-            View bar = ui.quotaBar(tight);
-            card.addView(bar);
+            card.addView(ui.quotaBar(100 - tight, tight));
         }
 
         // 二级：每个账号一行，缩进
@@ -738,11 +737,9 @@ final class NativePageOverview extends NativePage {
             right = "无限";
             color = ui.col(M3.TERTIARY);
         } else if (limit > 0) {
-            // 供应商自己算的计数最准（WorkBuddy 的 credits 是绝对值）。
-            // 计数可能很长（200000000），在 238dp 的窄卡里必须缩写，
-            // 否则右侧数字会把左边的名字顶没。
+            // 与账号页一致：写「剩余 / 总额度」，条画已用。
             boolean showUnit = !unit.isEmpty() && !name.contains(unit);
-            right = shortCount(amount) + " / " + shortCount(limit)
+            right = shortCount(Math.max(0, limit - amount)) + " / " + shortCount(limit)
                     + (showUnit ? " " + unit : "");
             color = ui.quotaColor(remaining);
         } else if (!display.isEmpty()) {
@@ -760,14 +757,10 @@ final class NativePageOverview extends NativePage {
         box.addView(head);
 
         if (!unlimited) {
-            if (limit > 0) {
-                // 计数型窗口：条按已用比例走，方向一致（越满越危险）
-                box.addView(ui.quotaBar(100 - used));
-            } else if (text && !display.isEmpty()) {
-                box.addView(ui.quotaBar(100 - Math.min(100, used)));
-            } else {
-                box.addView(ui.quotaBar(remaining));
-            }
+            double usedPct = limit > 0
+                    ? Math.max(0, Math.min(100, amount * 100.0 / limit))
+                    : Math.max(0, Math.min(100, used));
+            box.addView(ui.quotaBar(usedPct, remaining));
         }
 
         StringBuilder sub = new StringBuilder();

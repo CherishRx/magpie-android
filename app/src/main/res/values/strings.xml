@@ -108,10 +108,10 @@
     <string name="background_guide_intro">Magpie 网关会通过前台服务继续运行。下面两项可减少系统在熄屏或内存紧张时限制它的概率；不会保证永不被系统回收。</string>
     <string name="background_guide_notifications">通知权限</string>
     <string name="background_guide_notifications_hint">允许通知后，网关运行状态和连续异常重启提示才会显示。</string>
-    <string name="background_guide_battery">电池优化</string>
-    <string name="background_guide_battery_hint">设为「不受限制」或允许忽略电池优化，减少熄屏后冻结网关的概率。</string>
+    <string name="background_guide_battery">电池优化 → 设为「无限制」</string>
+    <string name="background_guide_battery_hint">小米 / 澎湃OS 的省电策略会在 App 退到后台约 40 秒后冻结整个进程组：网关端口还在监听、通知也还在，但代码一行都不执行，AI 智能体会一直卡在「正在思考」，直到你手动点开 App。把这台手机的 Magpie 设成「无限制」实测能避免。</string>
     <string name="background_guide_xiaomi">小米 / 澎湃OS 额外步骤</string>
-    <string name="background_guide_xiaomi_hint">系统设置中允许 Magpie 自启动；在最近任务里锁定 Magpie。不同机型入口名称可能不同。</string>
+    <string name="background_guide_xiaomi_hint">除了「无限制」，还要：允许自启动；在最近任务里下拉锁定 Magpie；省电策略里关掉「智能省电」对这个应用的自动管理。不设的后果就是上面那段：退后台久了网关被冻结，智能体卡住。</string>
     <string name="background_guide_open">去设置</string>
     <string name="background_guide_later">以后再说</string>
     <string name="background_guide_never">不再提示</string>

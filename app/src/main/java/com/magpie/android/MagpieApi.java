@@ -146,6 +146,20 @@ final class MagpieApi {
         return get(ctx, "/api/providers?last=1", CONNECT_MS, READ_MS);
     }
 
+    /**
+     * 供应商全量列表。
+     *
+     * <p>为什么要有这个：{@code ?last=1} 返回的是「上一次读到的缓存」，
+     * 如果这台手机从来没打开过网页的供应商页，缓存就是 {@code null}，
+     * 原生界面于是拿不到任何 keyList —— 启停按钮就永远找不到账号
+     * （抖「这个账号没在供应商列表里找到」）。所以找不到时用这个兜底。
+     *
+     * <p>这个响应比 last=1 大（含模型表），所以只在必要时用。
+     */
+    static Result providersFull(Context ctx) {
+        return get(ctx, "/api/providers", CONNECT_MS, READ_SLOW_MS);
+    }
+
     /** 一条请求的原文：{@code {headers, requestBody, responseBody, …}}。 */
     static Result gatewayCall(Context ctx, long routeId) {
         return get(ctx, "/api/gateway/call?route=" + routeId, CONNECT_MS, READ_SLOW_MS);
