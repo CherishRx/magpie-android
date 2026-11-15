@@ -63,8 +63,11 @@ rm -rf "$REPO_DIR/app/src/main"
 cp -r app/src/main "$REPO_DIR/app/src/main"
 rm -rf "$REPO_DIR/app/src/main/assets/bin"
 cp -f scripts/build-apk-local.sh scripts/build-magpie.sh scripts/sync-binary.sh \
-    scripts/magpie-cli.sh scripts/magpie.config scripts/build-apk.sh \
-    scripts/magpie.service scripts/status.sh "$REPO_DIR/scripts/" 2>/dev/null || true
+    "$REPO_DIR/scripts/" 2>/dev/null || true
+
+# README / 开发文档也一起同步，别让发布页说反了
+if [ -f README.github.md ]; then cp -f README.github.md "$REPO_DIR/README.md"; fi
+if [ -f README.md ]; then cp -f README.md "$REPO_DIR/README.dev.md"; fi
 
 cd "$REPO_DIR"
 
@@ -95,24 +98,74 @@ BODY="Magpie 的 Android 壳（非官方移植）。
 
 本版：$VERSION_NAME
 
+## 本次更新：主界面全面重做为原生界面
+
+magpie 内核完全不变，只把外面那层 WebView 换成原生绘制的界面——点开就能直接看用量、账号和路由，不用等网页加载。
+
+本版是从 1.0.48 起的一次大跨度更新（1.1.0 → 1.4.2）。
+
+### 四个原生标签页
+
+- **概览**：时间范围条（今天 / 24 小时 / 7 天 / 30 天 / 全部）、2×2 汇总卡（Token 含缓存 / 请求数与失败重试 / 费用与未计价 / 缓存命中率 / 输出速度与首字延迟 / ↑上传 ↓下载流量）、趋势图、按供应商分组的额度卡。
+- **用量**：周期切换、汇总、模型排行、谁在用、最近请求。
+- **账号**：供应商一级折叠（带厂商图标与合计）、账号二级折叠、额度进度、单账号启停、顶部「添加供应商」。
+- **路由**：实时面板（请求 · 改道 · 错误三个计数、绿色虚线联动、候选账号卡高亮）与请求记录（实时 / 今天 / 昨天 / 更早）。点任一条可看该次请求的上下文窗口明细——Token 用量、缓存命中、色块占比图、分项清单，再点分项能看工具定义和消息原文。
+
+### 其他
+
+- 顶栏三个胶囊：网关地址、插件（直达网页插件页）、局域网。
+- 底部悬浮胶囊标签栏；右上角 ⋮ 菜单按「控制台 / 网关 / 插件 / 更新 / 其他」分组。
+- 数字单位可切换：K / M / B ↔ 万 / 亿。
+- 全页下拉刷新。
+- 后台零唤醒：切到后台后停止所有长轮询与定时器，不在后台耗电。
+- 完整网页界面仍然保留：⋮ → 打开控制后台。插件安装、隐私脱敏、同步备份等深度功能用它。
+- 更新源与稳定渠道移到更新页，设置页去掉重复项。
+- 后台释放页面内存默认改为 5 分钟。
+
 ## 安装
-下载本 Release 的 APK 直接安装。升级须用同一签名的 APK 覆盖安装。
+下载本 Release 的 APK 直接安装。升级须用同一签名的 APK 覆盖安装；不要先卸载，否则本地配置、账号和数据会被清除。
+
+当前只提供 Android arm64 包，最低 Android 7.0（API 24）。
 
 ## 说明
-本项目基于 magpie（MIT）制作，仅供学习交流；内核版权归 magpie 原作者所有，如涉及侵权请联系删除。构建由 AI 辅助完成。"
+本项目基于 magpie（MIT）制作，仅供学习交流；内核版权归 magpie 原作者所有，如涉及侵权请联系删除。"
 
 echo "==> 创建 Release"
-RELEASE_JSON="$(python3 -c '
-import json,sys
-print(json.dumps({"tag_name":sys.argv[1],"name":"Magpie for Android "+sys.argv[2],"body":sys.argv[3],"draft":False,"prerelease":False}))
-' "$TAG" "$VERSION_NAME" "$BODY")"
+# JSON 必须先落文件再用 @ 传给 curl。
+# 直接 -d "$JSON" 会让 shell/echo 层吃掉反斜杠转义，GitHub 回 400 Problems parsing JSON。
+REL_JSON_FILE="$(mktemp)"
+trap 'rm -f "$REL_JSON_FILE"' EXIT
+python3 - "$REL_JSON_FILE" "$TAG" "$VERSION_NAME" "$BODY" <<'PY'
+import json, sys
+path, tag, ver, body = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+with open(path, 'w', encoding='utf-8') as f:
+    json.dump({"tag_name": tag, "name": "Magpie for Android " + ver,
+               "body": body, "draft": False, "prerelease": False},
+              f, ensure_ascii=False)
+PY
 
-RELEASE_ID="$(curl -sS -X POST \
+curl -sS -X POST \
     -H "Authorization: token $TOKEN" \
     -H "Accept: application/vnd.github+json" \
+    -H "Content-Type: application/json" \
     "https://api.github.com/repos/$OWNER/$REPO/releases" \
-    -d "$RELEASE_JSON" \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id",""))')"
+    -d @"$REL_JSON_FILE" \
+    -o "$REL_JSON_FILE.out" -w '%{http_code}' > "$REL_JSON_FILE.code"
+
+RELEASE_ID="$(python3 -c '
+import json,sys
+p=sys.argv[1]
+try:
+    d=json.load(open(p))
+except Exception as e:
+    print(""); print("    解析回包失败:", e, file=sys.stderr); sys.exit(0)
+if d.get("id") is None:
+    print("", file=sys.stdout)
+    print("    HTTP %s: %s" % (open(p+".code").read().strip(), d.get("message")), file=sys.stderr)
+else:
+    print(d["id"])
+' "$REL_JSON_FILE.out")"
+rm -f "$REL_JSON_FILE.out" "$REL_JSON_FILE.code"
 
 [ -n "$RELEASE_ID" ] || { echo "创建 Release 失败" >&2; exit 1; }
 echo "    release id = $RELEASE_ID"
