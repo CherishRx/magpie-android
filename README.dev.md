@@ -4,12 +4,14 @@
 不用 Termux，不用刷 Magisk。以后上游发新版，直接在 App 里拉下来换掉，不用重新装 APK。
 
 ```
-┌─ App（这个仓库的 app/）────────────────────────────┐
-│  MainActivity ── WebView ──→ http://127.0.0.1:3430 │
-│       ⋮ 菜单 → 设置 / 检查更新                     │
-│  GatewayService（前台服务）                        │
-│       └─ exec filesDir/magpie/magpie serve         │
-└────────────────────────────────────────────────────┘
+┌─ App（这个仓库的 app/）──────────────────────────────────┐
+│  NativeHome（原生主界面：概览 / 用量 / 账号 / 路由）      │
+│       └─ 直接读 magpie 的 HTTP 接口绘制，不套 WebView     │
+│  MainActivity ── WebView ──→ http://127.0.0.1:3430        │
+│       └─ 从 ⋮ →「打开控制后台」进，完整网页功能在这      │
+│  GatewayService（前台服务）                              │
+│       └─ exec filesDir/magpie/magpie serve               │
+└────────────────────────────────────────────────────────┘
                      ↑
          filesDir/magpie/magpie  ← 更新就是换掉这个 ELF
 ```
@@ -17,15 +19,16 @@
 ## 这是个壳，更新的是里面那个 ELF
 
 magpie 本体是一个 Go 程序（`magpie serve`）：网关在 3425，Web UI 在网关 +5（3430），
-页面是它自己内嵌的。App 只负责三件事——把 ELF 放出来、把进程拉起来、把 WebView 指过去。
+页面是它自己内嵌的。App 负责四件事——把 ELF 放出来、把进程拉起来、
+用原生界面把网关的数据画出来、需要深度功能时把 WebView 指过去。
 所以：
 
-- **功能更新、界面更新都来自上游**，壳几乎不用跟着改；
+- **功能更新、内核更新都来自上游**，壳只管展示，不用跟着改；
 - **“在 App 里拉更新”= 换掉 `filesDir/magpie/magpie` 这个文件**，不是装新 APK。
 
 ## 在 App 里更新（重点）
 
-入口：主界面右上角 **⋮ → 检查更新**，或 **设置 → 检查 magpie 更新**。
+入口：主界面右上角 **⋮ → 检查 magpie 更新**，或 **更新页 → 检查 magpie 更新**。
 启动时还会静默查一次（一天最多一次），有新版本弹一句提示——只提示，不自动下载，
 70 MB 别在你不知道的时候吃掉流量。
 
@@ -36,7 +39,7 @@ magpie 本体是一个 Go 程序（`magpie serve`）：网关在 3425，Web UI �
 | 1 | `https://usemagpie.ai/api/latest` | 官方清单：版本、更新说明、每个文件的 SHA-256。也是 `magpie update` 用的那个 |
 | 2 | `https://api.github.com/repos/yetone/magpie-releases/releases/latest` | GitHub 官方 API，官方清单挂了才用（未认证限流 60 次/小时） |
 
-设置页的「更新源」可以改成任何同格式的地址（自建反代、镜像站都行）。
+更新页的「更新源」可以改成任何同格式的地址（自建反代、镜像站都行）。
 资产固定取 **`magpie-cli-android-arm64`**（armv7 机器取 `magpie-cli-android-arm`）。
 
 ### 五步，一步都不省
