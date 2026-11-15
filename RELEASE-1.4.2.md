@@ -7,12 +7,31 @@
 | Release | https://github.com/yqing004-boop/magpie-android/releases/tag/v1.4.2 |
 | tag | `v1.4.2` |
 | 源码 commit（tag 指向） | `30b9602` |
-| main 最新 | `760260a` |
+| main 最新 | `85056a6` |
 | APK | `magpie-android-1.4.2.apk`（77,791,178 B） |
 | SHA-256 | `c5f5b43d978583fff31030a89efe50046acbfc0c584c6bd8a60778c96a571e56` |
-| 状态 | 已发布（draft=false, prerelease=false） |
+| GitHub 状态 | 已发布（draft=false, prerelease=false） |
+| 蓝奏云 | 已上传 |
 
 SHA-256 已双向核对：本地 `sha256sum` 输出与 GitHub API 返回的 `digest` 完全一致。
+
+## 蓝奏云
+
+| 项 | 值 |
+|---|---|
+| 所在目录 | 「应用 → magpie」（folder_id `14218910`） |
+| 文件夹页 | https://wwbcx.lanzout.com/b0rbkmqxa（提取码 `9vgx`） |
+| 本文件直链 | https://wwbcx.lanzout.com/i1ayA4g1idib |
+| 本文件提取码 | `b9ua` |
+| 文件 id | `331002811` |
+
+说明：
+
+- 该目录就是 App 内「设置 → 蓝奏云更新」指向的那个分享（`strings.xml` 的
+  `shell_lanzou_url` = `b0rbkmqxa`，`shell_lanzou_password` = `9vgx`），
+  已核实目录分享信息与 App 内置值一致 → **不需要改 App**，用户点进去就能看到 1.4.2。
+- 每个 APK 都带独立提取码是蓝奏云的默认行为（非会员不允许关闭），
+  历史 7 个版本全都如此（1.0.22/25/28/35/39/48 + 1.4.2），不是这次才有的。
 
 ## 本次改了什么
 
